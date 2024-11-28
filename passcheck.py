@@ -1,90 +1,91 @@
-import re
 import math
+import os
 import time
-import sys
-from tqdm import tqdm
+import string
 
-# CHARACTER SETS
-LOWERCASE = 26
-UPPERCASE = 26
-DIGITS = 10
-SPECIAL = 32 
+# Load common passwords from file
+def load_common_passwords(file_path="common.txt"):
+    if os.path.exists(file_path):
+        with open(file_path, "r") as f:
+            return set(line.strip() for line in f)
+    return set()
 
-# Brute force speed (attempts per second)
-ATTACK_SPEED = 10**11
-
-def get_charset(password):
-    """Returns the character set size based on the password composition."""
-    charset_size = 0
-    if re.search(r'[a-z]', password): charset_size += LOWERCASE
-    if re.search(r'[A-Z]', password): charset_size += UPPERCASE
-    if re.search(r'[0-9]', password): charset_size += DIGITS
-    if re.search(r'[\W_]', password): charset_size += SPECIAL
-    return charset_size
-
+# Calculate password entropy
 def calculate_entropy(password):
-    """Calculate entropy based on the password length and character set size."""
-    charset_size = get_charset(password)
-    if charset_size == 0:
+    if not password:
         return 0
-    return math.log2(charset_size) * len(password)
+    pool_size = 0
+    if any(char.islower() for char in password):
+        pool_size += 26
+    if any(char.isupper() for char in password):
+        pool_size += 26
+    if any(char.isdigit() for char in password):
+        pool_size += 10
+    if any(char in string.punctuation for char in password):
+        pool_size += len(string.punctuation)
+    if any(char.isspace() for char in password):
+        pool_size += 1
+    return len(password) * math.log2(pool_size) if pool_size > 0 else 0
 
-def estimate_bruteforce_time(password):
-    """Estimate the time it would take to brute force the password."""
-    charset_size = get_charset(password)
-    combinations = charset_size ** len(password)
-    time_seconds = combinations / ATTACK_SPEED
+# Estimate brute-force time
+def estimate_bruteforce_time(password, entropy):
+    attempts_per_second = 1e9  # Assume 1 billion attempts/second
+    total_combinations = 2 ** entropy
+    time_seconds = total_combinations / attempts_per_second
     return time_seconds
 
+# Format brute-force time into human-readable format
 def format_time(seconds):
-    """Format time in seconds into a readable format (years, days, hours, minutes)."""
-    if seconds < 60:
-        return f"{seconds:.2f} seconds"
-    elif seconds < 3600:
-        return f"{seconds / 60:.2f} minutes"
-    elif seconds < 86400:
-        return f"{seconds / 3600:.2f} hours"
-    elif seconds < 31536000:
-        return f"{seconds / 86400:.2f} days"
-    else:
-        return f"{seconds / 31536000:.2f} years"
+    intervals = [
+        ('years', 60 * 60 * 24 * 365),
+        ('days', 60 * 60 * 24),
+        ('hours', 60 * 60),
+        ('minutes', 60),
+        ('seconds', 1),
+    ]
+    result = []
+    for name, count in intervals:
+        value = seconds // count
+        if value > 0:
+            result.append(f"{int(value)} {name}")
+        seconds %= count
+    return ", ".join(result) if result else "0 seconds"
 
-def check_password_strength(password):
-    """Check the password strength based on entropy and brute force estimates."""
+# Determine strength level
+def determine_strength(password, entropy, common_passwords):
+    if password in common_passwords:
+        return "WEAK", "🔴"
+    if entropy < 28:
+        return "WEAK", "🔴"
+    elif entropy < 50:
+        return "ACCEPTABLE", "🟡"
+    elif entropy >= 50:
+        return "STRONG", "🟢"
+    return "UNKNOWN", "⚪"
+
+# Main password checker
+def check_password(password, common_passwords):
     entropy = calculate_entropy(password)
-    brute_force_time = estimate_bruteforce_time(password)
-    
-    if entropy < 40:
-        strength = "❌ WEAK"
-    elif entropy < 60:
-        strength = "⚠️ ACCEPTABLE"
-    else:
-        strength = "✅ STRONG"
-    
-    return entropy, brute_force_time, strength
+    brute_force_time = estimate_bruteforce_time(password, entropy)
+    strength, emoji = determine_strength(password, entropy, common_passwords)
 
-# Progress Bar Simulation
-def display_progress_bar(password):
-    """Show the progress of password evaluation with a progress bar."""
-    print("\nEvaluating password strength...\n")
-    for _ in tqdm(range(100), desc="Strength Evaluation", ncols=100):
-        time.sleep(0.02)  # Simulate calculation time
+    print("\nPassword Analysis:")
+    print(f"- Password: {'*' * len(password)}")
+    print(f"- Entropy: {entropy:.2f} bits")
+    # print(f"- Estimated Brute-force Time: {format_time(brute_force_time)}")
+    print(f"- Strength: {emoji} {strength}")
 
+# CLI interface
 def main():
-    password = input("Enter your password: ")
-    
-    # Display progress bar while calculating
-    display_progress_bar(password)
+    print("Password Strength Checker")
+    print("=========================")
+    common_passwords = load_common_passwords()
+    while True:
+        password = input("\nEnter a password to check (or 'exit' to quit): ")
+        if password.lower() == 'exit':
+            print("Goodbye!")
+            break
+        check_password(password, common_passwords)
 
-    # Calculate password strength
-    entropy, brute_force_time, strength = check_password_strength(password)
-    
-    # Print results
-    print(f"\nPassword Strength Evaluation:")
-    print(f"Entropy: {entropy:.2f} bits")
-    print(f"Estimated Brute-Force Time: {format_time(brute_force_time)}")
-    print(f"Strength: {strength}")
-
-# Run the program
 if __name__ == "__main__":
     main()
